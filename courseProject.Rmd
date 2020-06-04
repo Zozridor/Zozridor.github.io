@@ -1,0 +1,187 @@
+---
+title: "Practical Machine Learning - Course Project"
+author: "Dillon Jaghory"
+date: "5/27/2020"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Introduction and Setup
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways.  
+
+This study will design a machine learning algorithm to predict the manner in which participants exercised. The manner in which participants exercised is quantified by the "classe" variable.  
+
+The data for this project comes from: http://groupware.les.inf.puc-rio.br/har  
+
+**Obtaining the data and setting up the files**  
+  
+
+```{r libraries, echo=TRUE, warning=FALSE, message=FALSE}
+
+# Library Setup
+library(caret)
+library(rpart)
+library(ggplot2)
+library(DataExplorer)
+library(corrplot)
+library(RColorBrewer)
+library(tidyverse)
+library(randomForest)
+library(rattle)
+library(rpart.plot)
+
+```
+
+```{r downloading file}
+
+# File Setup
+filename1 <- "training.csv"
+filename2 <- "testing.csv"
+
+## Downloading the dataset:
+if (!file.exists(filename1)){
+  fileURL1 <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+  download.file(fileURL1, filename1, method="curl")
+}  
+
+if (!file.exists(filename2)){
+  fileURL2 <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+  download.file(fileURL2, filename2, method="curl")
+}  
+
+training <- read.csv("training.csv")
+testing <- read.csv("testing.csv")
+
+```
+
+**Cleaning the data**  
+  
+
+```{r cleaning}
+
+#Checking for Near-Zero Covariates and removing them
+nsv <- nearZeroVar(training, names = TRUE)
+all_cols <- names(training)
+training <- training[ , setdiff(all_cols, nsv)]
+
+#Cleaning out identifier columns and missing values
+training <- training[, which(colMeans(!is.na(training)) > 0.5)]
+training <- subset(training, select = -c(1:2))
+training <- subset(training, select = -c(3))
+
+#Data partition
+inTrain <- createDataPartition(training$classe, p = .8, 
+                                  list = FALSE)
+trainSet <- training[inTrain,]
+validationSet  <- training[-inTrain,]
+
+```
+
+
+# Exploratory Analysis  
+
+A cursory look at the data shows that exercise type A occurs most frequently, while the other kinds of exercise occur at roughly the same rate.  
+
+
+```{r frequency}
+
+#Frequency of each exercise category
+plot_bar(training$classe)
+
+
+```
+  
+Using the corrplot library, I construct a colorful correlation matrix. Positive correlations are in blue whereas negative correlations are in red. The legend on the right can be used to ascertain the specific degree of correlation.   
+      
+```{r correlation}
+
+#Correlation analysis
+#classe column must be removed first since it is not numeric
+train_cor <- training
+train_cor <- subset(train_cor, select = -c(classe))
+train_cor <-cor(train_cor)
+corrplot(train_cor, order="hclust", type = "upper", method = "color", tl.cex = 0.4, 
+         tl.col = "black", col=brewer.pal(n=8, name="RdYlBu"))
+
+```
+
+
+# Model Construction  
+
+
+## First Model: Decision Tree  
+
+```{r model1}
+
+set.seed(123)
+
+dt_fit <- rpart(classe~., data = trainSet, method = 'class')
+fancyRpartPlot(dt_fit)
+
+```
+
+
+## Second Model: Random Forest  
+
+```{r model2}
+
+set.seed(123)
+
+rf_fit <- randomForest(classe ~ ., data=trainSet, ntree=100, mtry=7, importance=TRUE)
+rf_fit
+
+```
+
+# Cross-Valdiation and Error Assessment
+  
+The two models will be tested against the validation set and the model with the higher level accuracy will be used to make predictions on the testing set.  
+
+
+```{r cross-validation}
+
+pred1 <- predict(dt_fit, validationSet, type = "class")
+pred2 <- predict(rf_fit, newdata = validationSet)
+
+
+cfmx1 <- confusionMatrix(pred1, validationSet$classe)
+cfmx2 <- confusionMatrix(pred2, validationSet$classe)
+
+```
+**Statistics for the Decision Tree Fit**
+
+After checking the prediction results against the validation set, the decision tree model only has an accuracy rate of 86%.
+
+```{r model one stats}
+cfmx1$table
+cfmx1$overall
+```
+**Statistics for the Random Forest Fit**  
+  
+The random forest model has an accuracy of 99.89% when used on the validation set. Because this accuracy level is much higher than that of the decision tree model, the random forest model will be used for final predictions.  
+
+```{r model two stats}
+cfmx2$table
+cfmx2$overall
+```
+    
+# Final Predictions and Conclusion
+
+Using the random forest prediction model, we obtain the the final list of predictions:  
+B  A  B  A  A  E  D  B  A  A  B  C  B  A  E  E  A  B  B  B 
+
+After running these predictions through the week 4 quiz, every prediction turned out to be correct.
+
+```{r testing}
+
+finalPredictions <- predict(rf_fit, newdata = testing)
+finalPredictions
+
+```
+
+
